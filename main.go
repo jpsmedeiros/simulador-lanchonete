@@ -15,11 +15,17 @@ type Order struct {
 	Priority bool
 }
 
+type Event struct {
+	Order    Order
+	Duration time.Duration
+}
+
 var (
 	orders, hamburguers, icecreams, soda chan Order
 	wait                                 *sync.WaitGroup
 	totalTime                            uint
 	simSystem                            simulation.System
+	events                               []Event
 )
 
 const (
@@ -30,6 +36,21 @@ const (
 	MaxQueueSodaP   = 5
 	MaxQueueRequest = 5
 )
+
+func init() {
+	var orderNumber uint32
+	seed := uint32(17)
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
+	simulationTime := time.Hour
+	events = make([]Event, 0)
+	for simulationTime > 0 {
+		orderNumber = generateOrderNumber(rand())
+		duration := generateRandomTime(3, 15, time.Hour)
+		events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
+		simulationTime = simulationTime - duration
+	}
+
+}
 
 func main() {
 	wait = new(sync.WaitGroup)
@@ -52,16 +73,9 @@ func main() {
 }
 
 func generateClients() {
-
-	seed := uint32(17)
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
-	orderNumber := generateOrderNumber(rand())
-	for {
-		fmt.Println(orderNumber)
-		orders <- generateOrder(orderNumber)
-		fmt.Println(simSystem)
-		time.Sleep(generateRandomTime(3, 20, time.Hour))
-		orderNumber = generateOrderNumber(rand())
+	for _, event := range events {
+		time.Sleep(event.Duration)
+		orders <- event.Order
 	}
 }
 
