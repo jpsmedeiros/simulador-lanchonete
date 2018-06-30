@@ -5,6 +5,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/jpsmedeiros/simulador-lanchonete/simulation"
 )
 
 type Order struct {
@@ -17,6 +19,7 @@ var (
 	orders, hamburguers, icecreams, soda chan Order
 	wait                                 *sync.WaitGroup
 	totalTime                            uint
+	simSystem                            simulation.System
 )
 
 const (
@@ -52,6 +55,7 @@ func generateClients() {
 	delta := 5
 	for {
 		orders <- Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
+		fmt.Println(simSystem)
 		time.Sleep(generateRandomTime(3, delta, time.Minute))
 	}
 }
@@ -89,6 +93,7 @@ func hamburguerHandler() {
 	for order := range hamburguers {
 		if len(normal) <= MaxQueueBurguer {
 			normal = append(normal, order)
+			simSystem.AddHamburguer()
 		} else {
 			fmt.Println("Pedido de hamburguer descartado")
 		}
@@ -114,12 +119,14 @@ func sodaHandler() {
 		if order.Priority {
 			if len(priority) <= MaxQueueSodaP {
 				priority = append(priority, order)
+				simSystem.AddSoda()
 			} else {
 				fmt.Println("Pedido de refrigerante com prioridade descartado")
 			}
 		} else {
 			if len(normal) <= MaxQueueSoda {
 				normal = append(normal, order)
+				simSystem.AddSodaP()
 			} else {
 				fmt.Println("Pedido de refrigerante descartado")
 			}
@@ -129,12 +136,12 @@ func sodaHandler() {
 
 func makeBurguer(order Order) {
 	time.Sleep(generateRandomTime(0, 30, time.Hour))
-	fmt.Println(order.Type)
+	// fmt.Println(order.Type)
 }
 
 func makeSoda(order Order) {
 	time.Sleep(generateRandomTime(3, 60, time.Hour))
-	fmt.Println(order.Type)
+	// fmt.Println(order.Type)
 }
 
 func generateRandomNumber(a, c, m, seed uint32) func() float64 {
