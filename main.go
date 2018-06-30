@@ -36,39 +36,38 @@ func main() {
 	orders, hamburguers, soda = make(chan Order, 3), make(chan Order, 5), make(chan Order, 5)
 
 	//Gera pedidos
-	//Precisa consumir de uma lista
-	go func() {
-		var duration float64
-		rand := generateRandomNumber(1103515245, 12345, 1<<31, 3)
-		for {
-			duration = generateRandomExp(5, rand()) * float64(time.Minute)
-			orders <- Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
-			time.Sleep(time.Duration(duration))
-		}
-	}()
-
+	//TODO: Precisa consumir de uma lista
+	go generateClients()
 	//Consome pedidos de hamburguer
 	go hamburguerHandler()
-	//Conso os pedidos de refrigerante
+	//Consome os pedidos de refrigerante
 	go sodaHandler()
-
-	//Fecha os canais de comunicação quando acabar
-	go func() {
-		//Lida com os pedidos para separa-los
-		for item := range orders {
-			switch item.Type {
-			case "hamburguer":
-				hamburguers <- item
-			case "refrigerante":
-				soda <- item
-			default:
-				fmt.Println("Aguardando pedidos")
-			}
-		}
-	}()
-
+	//Organiza pedidos da fila de clientes
+	go handleClientRequests()
 	wait.Wait()
 
+}
+
+func generateClients() {
+	delta := 5
+	for {
+		orders <- Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
+		time.Sleep(generateRandomTime(3, delta, time.Minute))
+	}
+}
+
+func handleClientRequests() {
+	//Lida com os pedidos para separa-los
+	for item := range orders {
+		switch item.Type {
+		case "hamburguer":
+			hamburguers <- item
+		case "refrigerante":
+			soda <- item
+		default:
+			fmt.Println("Aguardando pedidos")
+		}
+	}
 }
 
 func hamburguerHandler() {
@@ -129,13 +128,13 @@ func sodaHandler() {
 }
 
 func makeBurguer(order Order) {
+	time.Sleep(generateRandomTime(0, 30, time.Hour))
 	fmt.Println(order.Type)
-	time.Sleep(BurguerTime * time.Millisecond)
 }
 
 func makeSoda(order Order) {
+	time.Sleep(generateRandomTime(3, 60, time.Hour))
 	fmt.Println(order.Type)
-	time.Sleep(SodaTime * time.Millisecond)
 }
 
 func generateRandomNumber(a, c, m, seed uint32) func() float64 {
@@ -150,4 +149,9 @@ func generateRandomNumber(a, c, m, seed uint32) func() float64 {
 
 func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
+}
+
+func generateRandomTime(seed uint32, delta int, duration time.Duration) time.Duration {
+	rand := generateRandomNumber(1103515245, 12345, 1<<31, seed)
+	return time.Duration(generateRandomExp(5, rand()) * float64(time.Minute))
 }
