@@ -55,21 +55,26 @@ func generateClients() {
 	delta := 5
 	for {
 		orders <- Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
-		fmt.Println(simSystem)
 		time.Sleep(generateRandomTime(3, delta, time.Minute))
 	}
 }
 
 func handleClientRequests() {
+	clientQueue := make([]Order, 0, MaxQueueRequest)
+	go func() {
+		for {
+			if len(clientQueue) > 0 && (clientQueue[0] != Order{}) {
+				processRequest(clientQueue[0])
+				clientQueue = clientQueue[1:]
+			}
+		}
+	}()
 	//Lida com os pedidos para separa-los
 	for item := range orders {
-		switch item.Type {
-		case "hamburguer":
-			hamburguers <- item
-		case "refrigerante":
-			soda <- item
-		default:
-			fmt.Println("Aguardando pedidos")
+		if len(clientQueue) < MaxQueueRequest {
+			clientQueue = append(clientQueue, item)
+		} else {
+			fmt.Println("Fila de pedidos cheia. Pedido descartado")
 		}
 	}
 }
@@ -131,6 +136,19 @@ func sodaHandler() {
 				fmt.Println("Pedido de refrigerante descartado")
 			}
 		}
+	}
+}
+
+func processRequest(order Order) {
+	fmt.Printf("Processando pedido: %v\n", order.Type)
+	time.Sleep(generateRandomTime(0, 30, time.Hour))
+	switch order.Type {
+	case "hamburguer":
+		hamburguers <- order
+	case "refrigerante":
+		soda <- order
+	default:
+		fmt.Println("Só quer vrau")
 	}
 }
 
