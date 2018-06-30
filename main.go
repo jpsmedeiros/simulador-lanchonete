@@ -52,7 +52,7 @@ func main() {
 }
 
 func generateClients() {
-	delta := 5
+
 	seed := uint32(17)
 	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
 	orderNumber := generateOrderNumber(rand())
@@ -60,21 +60,29 @@ func generateClients() {
 		fmt.Println(orderNumber)
 		orders <- generateOrder(orderNumber)
 		fmt.Println(simSystem)
-		time.Sleep(generateRandomTime(3, delta, time.Minute))
+		time.Sleep(generateRandomTime(3, 20, time.Hour))
 		orderNumber = generateOrderNumber(rand())
 	}
 }
 
 func handleClientRequests() {
+	clientQueue := make([]Order, 0, MaxQueueRequest)
+	go func() {
+		for {
+			if len(clientQueue) > 0 && (clientQueue[0] != Order{}) {
+				processRequest(clientQueue[0])
+				clientQueue = clientQueue[1:]
+				simSystem.RemoveClient()
+			}
+		}
+	}()
 	//Lida com os pedidos para separa-los
 	for item := range orders {
-		switch item.Type {
-		case "hamburguer":
-			hamburguers <- item
-		case "soda":
-			soda <- item
-		default:
-			fmt.Println("Aguardando pedidos")
+		if len(clientQueue) < MaxQueueRequest {
+			clientQueue = append(clientQueue, item)
+			simSystem.AddClient()
+		} else {
+			fmt.Println("Fila de pedidos cheia. Pedido descartado")
 		}
 	}
 }
@@ -86,6 +94,7 @@ func hamburguerHandler() {
 			//Tem alguem na fila de prioridade
 			if len(normal) > 0 && (normal[0] != Order{}) { // tem alguem na fila comum
 				makeBurguer(normal[0])
+				simSystem.RemoveHamburguer()
 				if normal[0].Next != nil {
 					normal[0].Priority = true
 					soda <- *normal[0].Next
@@ -113,9 +122,11 @@ func sodaHandler() {
 			//Tem alguem na fila de prioridade
 			if len(priority) > 0 && (priority[0] != Order{}) {
 				makeSoda(priority[0])
+				simSystem.RemoveSodaP()
 				priority = priority[1:]
 			} else if len(normal) > 0 && (normal[0] != Order{}) { // tem alguem na fila comum
 				makeSoda(normal[0])
+				simSystem.RemoveSoda()
 				normal = normal[1:]
 			}
 		}
@@ -124,14 +135,14 @@ func sodaHandler() {
 		if order.Priority {
 			if len(priority) <= MaxQueueSodaP {
 				priority = append(priority, order)
-				simSystem.AddSoda()
+				simSystem.AddSodaP()
 			} else {
 				fmt.Println("Pedido de refrigerante com prioridade descartado")
 			}
 		} else {
 			if len(normal) <= MaxQueueSoda {
 				normal = append(normal, order)
-				simSystem.AddSodaP()
+				simSystem.AddSoda()
 			} else {
 				fmt.Println("Pedido de refrigerante descartado")
 			}
@@ -139,14 +150,25 @@ func sodaHandler() {
 	}
 }
 
-func makeBurguer(order Order) {
+func processRequest(order Order) {
+	fmt.Printf("Processando pedido: %v\n", order.Type)
 	time.Sleep(generateRandomTime(0, 30, time.Hour))
-	// fmt.Println(order.Type)
+	switch order.Type {
+	case "hamburguer":
+		hamburguers <- order
+	case "refrigerante":
+		soda <- order
+	}
+}
+
+func makeBurguer(order Order) {
+	time.Sleep(generateRandomTime(5, 4, time.Hour))
+	fmt.Println(order.Type)
 }
 
 func makeSoda(order Order) {
-	time.Sleep(generateRandomTime(3, 60, time.Hour))
-	// fmt.Println(order.Type)
+	time.Sleep(generateRandomTime(3, 40, time.Hour))
+	fmt.Println(order.Type)
 }
 
 func randomNumberGenerator(a, c, m, seed uint32) func() float64 {
@@ -163,9 +185,9 @@ func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
 }
 
-func generateRandomTime(seed uint32, delta int, duration time.Duration) time.Duration {
+func generateRandomTime(seed uint32, delta float64, duration time.Duration) time.Duration {
 	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
-	return time.Duration(generateRandomExp(5, rand()) * float64(time.Minute))
+	return time.Duration(generateRandomExp(delta, rand()) * float64(time.Minute))
 }
 
 func generateOrderNumber(number float64) uint32 {
