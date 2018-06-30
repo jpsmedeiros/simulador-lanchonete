@@ -21,3 +21,19 @@ func (s *System) AddSoda() {
 func (s *System) AddSodaP() {
 	s.FPR = s.FPR + 1
 }
+
+func (s *System) RemoveClient() {
+	s.FC = s.FC - 1
+}
+
+func (s *System) RemoveHamburguer() {
+	s.FH = s.FH - 1
+}
+
+func (s *System) RemoveSoda() {
+	s.FR = s.FR - 1
+}
+
+func (s *System) RemoveSodaP() {
+	s.FPR = s.FPR - 1
+}
