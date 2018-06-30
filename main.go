@@ -29,8 +29,6 @@ var (
 )
 
 const (
-	BurguerTime     = 750
-	SodaTime        = 750
 	MaxQueueBurguer = 5
 	MaxQueueSoda    = 5
 	MaxQueueSodaP   = 5
@@ -41,15 +39,15 @@ func init() {
 	var orderNumber uint32
 	seed := uint32(17)
 	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
-	simulationTime := time.Hour
+	simulationTime := time.Hour / 3600
 	events = make([]Event, 0)
 	for simulationTime > 0 {
 		orderNumber = generateOrderNumber(rand())
-		duration := generateRandomTime(3, 15, time.Hour)
+		duration := generateRandomTime(3, 17, time.Hour)
 		events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
 		simulationTime = simulationTime - duration
 	}
-
+	fmt.Println(simulationTime)
 }
 
 func main() {
@@ -74,9 +72,14 @@ func main() {
 
 func generateClients() {
 	for _, event := range events {
-		orders <- event.Order
+		newEvent := event
+		orders <- newEvent.Order
 		time.Sleep(event.Duration)
+		fmt.Println(simSystem)
 	}
+	for simSystem != (simulation.System{}) {
+	}
+	wait.Done()
 }
 
 func handleClientRequests() {
@@ -165,24 +168,25 @@ func sodaHandler() {
 }
 
 func processRequest(order Order) {
-	fmt.Printf("Processando pedido: %v\n", order.Type)
 	time.Sleep(generateRandomTime(0, 30, time.Hour))
 	switch order.Type {
 	case "hamburguer":
 		hamburguers <- order
-	case "refrigerante":
+	case "soda":
 		soda <- order
+	default:
+		fmt.Println("lixo")
 	}
 }
 
 func makeBurguer(order Order) {
-	time.Sleep(generateRandomTime(5, 4, time.Hour))
-	fmt.Println(order.Type)
+	time.Sleep(generateRandomTime(5, 20, time.Hour))
+	//fmt.Println(order.Type)
 }
 
 func makeSoda(order Order) {
-	time.Sleep(generateRandomTime(3, 40, time.Hour))
-	fmt.Println(order.Type)
+	time.Sleep(generateRandomTime(3, 60, time.Hour))
+	//fmt.Println(order.Type)
 }
 
 func randomNumberGenerator(a, c, m, seed uint32) func() float64 {
@@ -201,14 +205,14 @@ func generateRandomExp(lambda float64, u float64) float64 {
 
 func generateRandomTime(seed uint32, delta float64, duration time.Duration) time.Duration {
 	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
-	return time.Duration(generateRandomExp(delta, rand()) * float64(time.Minute))
+	return time.Duration(generateRandomExp(delta, rand())*float64(time.Minute)) / 3600
 }
 
 func generateOrderNumber(number float64) uint32 {
 	orderNumber := uint32(number * 10)
-	if isInRange(0, 4, orderNumber) {
+	if isInRange(0, 3, orderNumber) {
 		return 1 // hamburguer
-	} else if isInRange(5, 5, orderNumber) {
+	} else if isInRange(4, 5, orderNumber) {
 		return 2 // soda
 	} else {
 		return 3 // hamburguer + soda
@@ -225,6 +229,6 @@ func generateOrder(orderNumber uint32) Order {
 	} else if orderNumber == 2 {
 		return Order{Type: "soda"}
 	} else {
-		return Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
+		return Order{Type: "hamburguer", Next: &Order{Type: "soda"}}
 	}
 }
