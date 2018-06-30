@@ -20,8 +20,12 @@ var (
 )
 
 const (
-	BurguerTime = 750
-	SodaTime    = 750
+	BurguerTime     = 750
+	SodaTime        = 750
+	MaxQueueBurguer = 5
+	MaxQueueSoda    = 5
+	MaxQueueSodaP   = 5
+	MaxQueueRequest = 5
 )
 
 func main() {
@@ -68,38 +72,40 @@ func main() {
 }
 
 func hamburguerHandler() {
-	normal := make([]Order, 0, 5)
+	normal := make([]Order, 0, MaxQueueBurguer)
 	go func() {
 		for {
 			//Tem alguem na fila de prioridade
-			if len(normal) > 0 { // tem alguem na fila comum
-				if normal[0].Type != "" {
-					makeBurguer(normal[0])
-					if normal[0].Next != nil {
-						normal[0].Priority = true
-						soda <- *normal[0].Next
-					}
-					normal = normal[1:]
+			if len(normal) > 0 && (normal[0] != Order{}) { // tem alguem na fila comum
+				makeBurguer(normal[0])
+				if normal[0].Next != nil {
+					normal[0].Priority = true
+					soda <- *normal[0].Next
 				}
+				normal = normal[1:]
 			}
 		}
 	}()
 
 	for order := range hamburguers {
-		normal = append(normal, order)
+		if len(normal) <= MaxQueueBurguer {
+			normal = append(normal, order)
+		} else {
+			fmt.Println("Pedido de hamburguer descartado")
+		}
 	}
 }
 
 func sodaHandler() {
-	priority := make([]Order, 0, 5)
-	normal := make([]Order, 0, 5)
+	priority := make([]Order, 0, MaxQueueSodaP)
+	normal := make([]Order, 0, MaxQueueSoda)
 	go func() {
 		for {
 			//Tem alguem na fila de prioridade
-			if len(priority) > 0 {
+			if len(priority) > 0 && (priority[0] != Order{}) {
 				makeSoda(priority[0])
 				priority = priority[1:]
-			} else if len(normal) > 0 { // tem alguem na fila comum
+			} else if len(normal) > 0 && (normal[0] != Order{}) { // tem alguem na fila comum
 				makeSoda(normal[0])
 				normal = normal[1:]
 			}
@@ -107,9 +113,17 @@ func sodaHandler() {
 	}()
 	for order := range soda {
 		if order.Priority {
-			priority = append(priority, order)
+			if len(priority) <= MaxQueueSodaP {
+				priority = append(priority, order)
+			} else {
+				fmt.Println("Pedido de refrigerante com prioridade descartado")
+			}
 		} else {
-			normal = append(normal, order)
+			if len(normal) <= MaxQueueSoda {
+				normal = append(normal, order)
+			} else {
+				fmt.Println("Pedido de refrigerante descartado")
+			}
 		}
 	}
 }
