@@ -65,7 +65,9 @@ func main() {
 			}
 		}
 	}()
+
 	wait.Wait()
+
 }
 
 func hamburguerHandler() {
@@ -178,4 +180,14 @@ func makeIcecream(order Order) {
 func makeSoda(order Order) {
 	fmt.Println(order.Type)
 	time.Sleep(SodaTime * time.Millisecond)
+}
+
+func generateRandomNumber(a, c, m, seed uint32) func() float64 {
+	// usage: rand := generateRandomNumber(1103515245, 12345, 1<<31, 0)
+	// then call rand()
+	r := seed
+	return func() float64 {
+		r = (a*r + c) % m
+		return float64(r) / float64(m)
+	}
 }
