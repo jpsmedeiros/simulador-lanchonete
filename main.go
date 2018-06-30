@@ -53,10 +53,15 @@ func main() {
 
 func generateClients() {
 	delta := 5
+	seed := uint32(17)
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
+	orderNumber := generateOrderNumber(rand())
 	for {
-		orders <- Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
+		fmt.Println(orderNumber)
+		orders <- generateOrder(orderNumber)
 		fmt.Println(simSystem)
 		time.Sleep(generateRandomTime(3, delta, time.Minute))
+		orderNumber = generateOrderNumber(rand())
 	}
 }
 
@@ -66,7 +71,7 @@ func handleClientRequests() {
 		switch item.Type {
 		case "hamburguer":
 			hamburguers <- item
-		case "refrigerante":
+		case "soda":
 			soda <- item
 		default:
 			fmt.Println("Aguardando pedidos")
@@ -144,8 +149,8 @@ func makeSoda(order Order) {
 	// fmt.Println(order.Type)
 }
 
-func generateRandomNumber(a, c, m, seed uint32) func() float64 {
-	// usage: rand := generateRandomNumber(1103515245, 12345, 1<<31, 0)
+func randomNumberGenerator(a, c, m, seed uint32) func() float64 {
+	// usage: rand := randomNumberGenerator(1103515245, 12345, 1<<31, 0)
 	// then call rand()
 	r := seed
 	return func() float64 {
@@ -159,6 +164,31 @@ func generateRandomExp(lambda float64, u float64) float64 {
 }
 
 func generateRandomTime(seed uint32, delta int, duration time.Duration) time.Duration {
-	rand := generateRandomNumber(1103515245, 12345, 1<<31, seed)
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
 	return time.Duration(generateRandomExp(5, rand()) * float64(time.Minute))
+}
+
+func generateOrderNumber(number float64) uint32 {
+	orderNumber := uint32(number * 10)
+	if isInRange(0, 4, orderNumber) {
+		return 1 // hamburguer
+	} else if isInRange(5, 5, orderNumber) {
+		return 2 // soda
+	} else {
+		return 3 // hamburguer + soda
+	}
+}
+
+func isInRange(x, y, value uint32) bool {
+	return x <= value && value <= y
+}
+
+func generateOrder(orderNumber uint32) Order {
+	if orderNumber == 1 {
+		return Order{Type: "hamburguer"}
+	} else if orderNumber == 2 {
+		return Order{Type: "soda"}
+	} else {
+		return Order{Type: "hamburguer", Next: &Order{Type: "refrigerante"}}
+	}
 }
