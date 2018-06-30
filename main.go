@@ -74,8 +74,8 @@ func main() {
 
 func generateClients() {
 	for _, event := range events {
-		time.Sleep(event.Duration)
 		orders <- event.Order
+		time.Sleep(event.Duration)
 	}
 }
 
