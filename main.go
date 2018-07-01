@@ -38,13 +38,13 @@ const (
 
 func init() {
 	var orderNumber uint32
-	seed := uint32(17)
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
+	var duration time.Duration
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 17)
 	simulationTime := time.Hour / 3600
 	events = make([]Event, 0)
 	for simulationTime > 0 {
 		orderNumber = generateOrderNumber(rand())
-		duration := generateRandomTime(3, 17, time.Hour)
+		duration = generateRandomTime(3, rand(), 17, time.Hour)
 		events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
 		simulationTime = simulationTime - duration
 	}
@@ -58,6 +58,7 @@ func main() {
 	hamburguerQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueBurguer)}
 	sodaPriorityQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSodaP)}
 	sodaQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSoda)}
+
 	//Consome pedidos de hamburguer
 	go hamburguerHandler()
 	//Consome os pedidos de refrigerante
@@ -85,11 +86,12 @@ func generateClients() {
 }
 
 func handleClientRequests() {
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 0)
 	for {
 		//Caso haja alguém na fila de clientes
 		if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
 			//Efetua o tempo de atendimento
-			time.Sleep(generateRandomTime(0, 30, time.Hour))
+			time.Sleep(generateRandomTime(0, rand(), 30, time.Hour))
 			//Bloqueia a fila de cliente para leitura
 			clientQueue.mux.RLock()
 			processRequest(clientQueue.Queue[0])
@@ -102,11 +104,12 @@ func handleClientRequests() {
 }
 
 func hamburguerHandler() {
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
 	for {
 		//Caso haja alguem na fila de hamburguer
 		if len(hamburguerQueue.Queue) > 0 { // tem alguem na fila comum
 			//Faz o hamburguer
-			makeBurguer(hamburguerQueue.Queue[0])
+			makeBurguer(hamburguerQueue.Queue[0], rand())
 			//Bloqueia a fila de hamburguer para modificar a fila ou enviar para a fila de refrigerante com prioridade
 			hamburguerQueue.mux.Lock()
 			//Caso haja proximo pedido de refrigerante
@@ -134,11 +137,12 @@ func hamburguerHandler() {
 }
 
 func sodaHandler() {
+	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
 	for {
 		//Caso haja alguem na fila de prioridade
 		if len(sodaPriorityQueue.Queue) > 0 {
 			//faz o refrigerante
-			makeSoda(sodaPriorityQueue.Queue[0])
+			makeSoda(sodaPriorityQueue.Queue[0], rand())
 			//bloqueia a fila para modificação
 			sodaPriorityQueue.mux.Lock()
 			sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
@@ -147,7 +151,7 @@ func sodaHandler() {
 			wait.Done()
 		} else if len(sodaQueue.Queue) > 0 {
 			//faz o refrigerante
-			makeSoda(sodaQueue.Queue[0])
+			makeSoda(sodaQueue.Queue[0], rand())
 			//bloqueia fila para modificação
 			sodaQueue.mux.Lock()
 			sodaQueue.Queue = sodaQueue.Queue[1:]
@@ -183,13 +187,13 @@ func processRequest(order Order) {
 	}
 }
 
-func makeBurguer(order Order) {
-	time.Sleep(generateRandomTime(5, 20, time.Hour))
+func makeBurguer(order Order, rand float64) {
+	time.Sleep(generateRandomTime(5, rand, 20, time.Hour))
 	//fmt.Println(order.Type)
 }
 
-func makeSoda(order Order) {
-	time.Sleep(generateRandomTime(3, 60, time.Hour))
+func makeSoda(order Order, rand float64) {
+	time.Sleep(generateRandomTime(3, rand, 60, time.Hour))
 	//fmt.Println(order.Type)
 }
 
@@ -207,9 +211,8 @@ func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
 }
 
-func generateRandomTime(seed uint32, delta float64, duration time.Duration) time.Duration {
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, seed)
-	return time.Duration(generateRandomExp(delta, rand())*float64(time.Minute)) / 3600
+func generateRandomTime(seed uint32, u, delta float64, duration time.Duration) time.Duration {
+	return time.Duration(generateRandomExp(delta, u)*float64(duration)) / 3600
 }
 
 func generateOrderNumber(number float64) uint32 {
