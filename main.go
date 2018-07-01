@@ -39,6 +39,9 @@ const (
 	ArrivalTimeUnit = time.Millisecond
 	ArrivalTime     = 110 //E[C]
 	ArrivalQuantity = 1
+	ServiceTimeUnit = time.Millisecond
+	ServiceTime     = 90
+	ServiceQuantity = 1
 )
 
 func init() {
@@ -98,7 +101,7 @@ func handleClientRequests() {
 		//Caso haja alguém na fila de clientes
 		if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
 			//Efetua o tempo de atendimento
-			time.Sleep(generateRandomTime(rand(), 30, time.Hour))
+			time.Sleep(generateRandomTime(rand(), ServiceQuantity, ServiceTime*ServiceTimeUnit))
 			//Bloqueia a fila de cliente para leitura
 			clientQueue.mux.RLock()
 			processRequest(clientQueue.Queue[0])
@@ -195,12 +198,12 @@ func processRequest(order Order) {
 }
 
 func makeBurguer(order Order, rand float64) {
-	time.Sleep(generateRandomTime(rand, 20, time.Hour))
+	time.Sleep(generateRandomTime(rand, 1, 4000*ServiceTimeUnit))
 	//fmt.Println(order.Type)
 }
 
 func makeSoda(order Order, rand float64) {
-	time.Sleep(generateRandomTime(rand, 60, time.Hour))
+	time.Sleep(generateRandomTime(rand, 60, 1500*ServiceTimeUnit))
 	//fmt.Println(order.Type)
 }
 
@@ -216,6 +219,10 @@ func randomNumberGenerator(a, c, m, seed uint32) func() float64 {
 
 func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
+}
+
+func calculateExpectedValue(lambda float64) float64 {
+	return 1 / lambda
 }
 
 func generateRandomTime(u, delta float64, duration time.Duration) time.Duration {
