@@ -24,9 +24,8 @@ type SafeQueue struct {
 }
 
 var (
-	orders, hamburguers, icecreams, soda                       chan Order
+	orders, hamburguers, soda                                  chan Order
 	wait                                                       *sync.WaitGroup
-	totalTime                                                  uint
 	events                                                     []Event
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
 )
@@ -81,12 +80,9 @@ func generateClients() {
 		newEvent := event
 		orders <- newEvent.Order
 		time.Sleep(event.Duration)
-		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	}
 	for len(hamburguerQueue.Queue) != 0 && len(sodaPriorityQueue.Queue) != 0 && len(sodaQueue.Queue) != 0 && len(clientQueue.Queue) != 0 {
-		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	}
-	fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	wait.Done()
 }
 
