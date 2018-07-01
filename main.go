@@ -29,11 +29,16 @@ var (
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
 )
 
+// Define experiment
 const (
-	MaxQueueBurguer = 5
-	MaxQueueSoda    = 5
-	MaxQueueSodaP   = 5
-	MaxQueueRequest = 5
+	QueueSize       = 15
+	MaxQueueBurguer = QueueSize
+	MaxQueueSoda    = QueueSize
+	MaxQueueSodaP   = QueueSize
+	MaxQueueRequest = QueueSize
+	ArrivalTimeUnit = time.Millisecond
+	ArrivalTime     = 110 //E[C]
+	ArrivalQuantity = 1
 )
 
 func init() {
@@ -44,7 +49,7 @@ func init() {
 	events = make([]Event, 0)
 	for simulationTime > 0 {
 		orderNumber = generateOrderNumber(rand())
-		duration = generateRandomTime(3, rand(), 17, time.Hour)
+		duration = generateRandomTime(rand(), ArrivalQuantity, ArrivalTime*ArrivalTimeUnit)
 		events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
 		simulationTime = simulationTime - duration
 	}
@@ -91,7 +96,7 @@ func handleClientRequests() {
 		//Caso haja alguém na fila de clientes
 		if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
 			//Efetua o tempo de atendimento
-			time.Sleep(generateRandomTime(0, rand(), 30, time.Hour))
+			time.Sleep(generateRandomTime(rand(), 30, time.Hour))
 			//Bloqueia a fila de cliente para leitura
 			clientQueue.mux.RLock()
 			processRequest(clientQueue.Queue[0])
@@ -188,12 +193,12 @@ func processRequest(order Order) {
 }
 
 func makeBurguer(order Order, rand float64) {
-	time.Sleep(generateRandomTime(5, rand, 20, time.Hour))
+	time.Sleep(generateRandomTime(rand, 20, time.Hour))
 	//fmt.Println(order.Type)
 }
 
 func makeSoda(order Order, rand float64) {
-	time.Sleep(generateRandomTime(3, rand, 60, time.Hour))
+	time.Sleep(generateRandomTime(rand, 60, time.Hour))
 	//fmt.Println(order.Type)
 }
 
@@ -211,7 +216,7 @@ func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
 }
 
-func generateRandomTime(seed uint32, u, delta float64, duration time.Duration) time.Duration {
+func generateRandomTime(u, delta float64, duration time.Duration) time.Duration {
 	return time.Duration(generateRandomExp(delta, u)*float64(duration)) / 3600
 }
 
