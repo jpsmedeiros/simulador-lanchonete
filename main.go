@@ -18,12 +18,17 @@ type Event struct {
 	Duration time.Duration
 }
 
+type SafeQueue struct {
+	Queue []Order
+	mux   sync.Mutex
+}
+
 var (
 	orders, hamburguers, icecreams, soda                       chan Order
 	wait                                                       *sync.WaitGroup
 	totalTime                                                  uint
 	events                                                     []Event
-	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue []Order
+	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
 )
 
 const (
@@ -54,10 +59,10 @@ func main() {
 	//cria um canal de pedidos
 	//Cria os canais de serviço
 	orders, hamburguers, soda = make(chan Order, 3), make(chan Order, 5), make(chan Order, 5)
-	clientQueue = make([]Order, 0, MaxQueueRequest)
-	hamburguerQueue = make([]Order, 0, MaxQueueBurguer)
-	sodaPriorityQueue = make([]Order, 0, MaxQueueSodaP)
-	sodaQueue = make([]Order, 0, MaxQueueSoda)
+	clientQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueRequest)}
+	hamburguerQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueBurguer)}
+	sodaPriorityQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSodaP)}
+	sodaQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSoda)}
 	//Gera pedidos
 	//TODO: Precisa consumir de uma lista
 	go generateClients()
@@ -76,24 +81,32 @@ func generateClients() {
 		newEvent := event
 		orders <- newEvent.Order
 		time.Sleep(event.Duration)
-		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue), len(hamburguerQueue), len(sodaPriorityQueue), len(sodaQueue))
+		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	}
+	for len(hamburguerQueue.Queue) != 0 && len(sodaPriorityQueue.Queue) != 0 && len(sodaQueue.Queue) != 0 && len(clientQueue.Queue) != 0 {
+		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
+	}
+	fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	wait.Done()
 }
 
 func handleClientRequests() {
 	go func() {
 		for {
-			if len(clientQueue) > 0 && (clientQueue[0] != Order{}) {
-				processRequest(clientQueue[0])
-				clientQueue = clientQueue[1:]
+			if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
+				processRequest(&clientQueue.Queue[0])
+				clientQueue.mux.Lock()
+				clientQueue.Queue = clientQueue.Queue[1:]
+				clientQueue.mux.Unlock()
 			}
 		}
 	}()
 	//Lida com os pedidos para separa-los
 	for item := range orders {
-		if len(clientQueue) < MaxQueueRequest {
-			clientQueue = append(clientQueue, item)
+		if len(clientQueue.Queue) < MaxQueueRequest {
+			clientQueue.mux.Lock()
+			clientQueue.Queue = append(clientQueue.Queue, item)
+			clientQueue.mux.Unlock()
 		} else {
 			fmt.Println("Fila de pedidos cheia. Pedido descartado")
 		}
@@ -104,20 +117,24 @@ func hamburguerHandler() {
 	go func() {
 		for {
 			//Tem alguem na fila de prioridade
-			if len(hamburguerQueue) > 0 && (hamburguerQueue[0] != Order{}) { // tem alguem na fila comum
-				makeBurguer(hamburguerQueue[0])
-				if hamburguerQueue[0].Next != nil {
-					hamburguerQueue[0].sodaPriorityQueue = true
-					soda <- *hamburguerQueue[0].Next
+			if len(hamburguerQueue.Queue) > 0 && (hamburguerQueue.Queue[0] != Order{}) { // tem alguem na fila comum
+				makeBurguer(hamburguerQueue.Queue[0])
+				if hamburguerQueue.Queue[0].Next != nil {
+					hamburguerQueue.Queue[0].sodaPriorityQueue = true
+					soda <- *hamburguerQueue.Queue[0].Next
 				}
-				hamburguerQueue = hamburguerQueue[1:]
+				hamburguerQueue.mux.Lock()
+				hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
+				hamburguerQueue.mux.Unlock()
 			}
 		}
 	}()
 
 	for order := range hamburguers {
-		if len(hamburguerQueue) <= MaxQueueBurguer {
-			hamburguerQueue = append(hamburguerQueue, order)
+		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
+			hamburguerQueue.mux.Lock()
+			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
+			hamburguerQueue.mux.Unlock()
 		} else {
 			fmt.Println("Pedido de hamburguer descartado")
 		}
@@ -128,25 +145,29 @@ func sodaHandler() {
 	go func() {
 		for {
 			//Tem alguem na fila de prioridade
-			if len(sodaPriorityQueue) > 0 && (sodaPriorityQueue[0] != Order{}) {
-				makeSoda(sodaPriorityQueue[0])
-				sodaPriorityQueue = sodaPriorityQueue[1:]
-			} else if len(sodaQueue) > 0 && (sodaQueue[0] != Order{}) { // tem alguem na fila comum
-				makeSoda(sodaQueue[0])
-				sodaQueue = sodaQueue[1:]
+			if len(sodaPriorityQueue.Queue) > 0 && (sodaPriorityQueue.Queue[0] != Order{}) {
+				makeSoda(sodaPriorityQueue.Queue[0])
+				sodaPriorityQueue.mux.Lock()
+				sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
+				sodaPriorityQueue.mux.Unlock()
+			} else if len(sodaQueue.Queue) > 0 && (sodaQueue.Queue[0] != Order{}) { // tem alguem na fila comum
+				makeSoda(sodaQueue.Queue[0])
+				sodaPriorityQueue.mux.Lock()
+				sodaQueue.Queue = sodaQueue.Queue[1:]
+				sodaPriorityQueue.mux.Unlock()
 			}
 		}
 	}()
 	for order := range soda {
 		if order.sodaPriorityQueue {
-			if len(sodaPriorityQueue) <= MaxQueueSodaP {
-				sodaPriorityQueue = append(sodaPriorityQueue, order)
+			if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
+				sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, order)
 			} else {
 				fmt.Println("Pedido de refrigerante com prioridade descartado")
 			}
 		} else {
-			if len(sodaQueue) <= MaxQueueSoda {
-				sodaQueue = append(sodaQueue, order)
+			if len(sodaQueue.Queue) <= MaxQueueSoda {
+				sodaQueue.Queue = append(sodaQueue.Queue, order)
 			} else {
 				fmt.Println("Pedido de refrigerante descartado")
 			}
@@ -154,15 +175,15 @@ func sodaHandler() {
 	}
 }
 
-func processRequest(order Order) {
+func processRequest(order *Order) {
+	if order == nil {
+		return
+	}
 	time.Sleep(generateRandomTime(0, 30, time.Hour))
-	switch order.Type {
-	case "hamburguer":
-		hamburguers <- order
-	case "soda":
-		soda <- order
-	default:
-		fmt.Println("lixo")
+	if order.Type == "hamburguer" {
+		hamburguers <- *order
+	} else {
+		soda <- *order
 	}
 }
 
