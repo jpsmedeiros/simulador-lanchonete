@@ -64,122 +64,71 @@ func main() {
 	sodaQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSoda)}
 	//Gera pedidos
 	//TODO: Precisa consumir de uma lista
-	go generateClients()
-	//Consome pedidos de hamburguer
-	go hamburguerHandler()
-	//Consome os pedidos de refrigerante
-	go sodaHandler()
-	//Organiza pedidos da fila de clientes
-	go handleClientRequests()
-	wait.Wait()
-
+	for len(events) > 0 {
+		generateClients()
+		//Organiza pedidos da fila de clientes
+		handleClientRequests()
+		//Consome pedidos de hamburguer
+		hamburguerHandler()
+		//Consome os pedidos de refrigerante
+		sodaHandler()
+	}
 }
 
 func generateClients() {
-	for _, event := range events {
-		newEvent := event
-		orders <- newEvent.Order
-		time.Sleep(event.Duration)
+	if len(events) > 0 {
+		newEvent := events[0]
+		clientQueue.Queue = append(clientQueue.Queue, newEvent.Order)
+		time.Sleep(events[0].Duration)
+		events = events[1:]
 	}
-	for len(hamburguerQueue.Queue) != 0 && len(sodaPriorityQueue.Queue) != 0 && len(sodaQueue.Queue) != 0 && len(clientQueue.Queue) != 0 {
-	}
-	wait.Done()
 }
 
 func handleClientRequests() {
-	go func() {
-		for {
-			if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
-				processRequest(&clientQueue.Queue[0])
-				clientQueue.mux.Lock()
-				clientQueue.Queue = clientQueue.Queue[1:]
-				clientQueue.mux.Unlock()
-			}
-		}
-	}()
-	//Lida com os pedidos para separa-los
-	for item := range orders {
-		if len(clientQueue.Queue) < MaxQueueRequest {
-			clientQueue.mux.Lock()
-			clientQueue.Queue = append(clientQueue.Queue, item)
-			clientQueue.mux.Unlock()
-		} else {
-			fmt.Println("Fila de pedidos cheia. Pedido descartado")
-		}
+	if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
+		processRequest(clientQueue.Queue[0])
+		clientQueue.Queue = clientQueue.Queue[1:]
 	}
 }
 
 func hamburguerHandler() {
-	go func() {
-		for {
-			//Tem alguem na fila de prioridade
-			if len(hamburguerQueue.Queue) > 0 && (hamburguerQueue.Queue[0] != Order{}) { // tem alguem na fila comum
-				makeBurguer(hamburguerQueue.Queue[0])
-				if hamburguerQueue.Queue[0].Next != nil {
-					hamburguerQueue.Queue[0].sodaPriorityQueue = true
-					soda <- *hamburguerQueue.Queue[0].Next
-				}
-				hamburguerQueue.mux.Lock()
-				hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
-				hamburguerQueue.mux.Unlock()
+	//Tem alguem na fila de prioridade
+	if len(hamburguerQueue.Queue) > 0 && (hamburguerQueue.Queue[0] != Order{}) { // tem alguem na fila comum
+		makeBurguer(hamburguerQueue.Queue[0])
+		if hamburguerQueue.Queue[0].Next != nil {
+			if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
+				sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, hamburguerQueue.Queue[0])
 			}
 		}
-	}()
-
-	for order := range hamburguers {
-		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
-			hamburguerQueue.mux.Lock()
-			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
-			hamburguerQueue.mux.Unlock()
-		} else {
-			fmt.Println("Pedido de hamburguer descartado")
-		}
+		hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
 	}
 }
 
 func sodaHandler() {
-	go func() {
-		for {
-			//Tem alguem na fila de prioridade
-			if len(sodaPriorityQueue.Queue) > 0 && (sodaPriorityQueue.Queue[0] != Order{}) {
-				makeSoda(sodaPriorityQueue.Queue[0])
-				sodaPriorityQueue.mux.Lock()
-				sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
-				sodaPriorityQueue.mux.Unlock()
-			} else if len(sodaQueue.Queue) > 0 && (sodaQueue.Queue[0] != Order{}) { // tem alguem na fila comum
-				makeSoda(sodaQueue.Queue[0])
-				sodaPriorityQueue.mux.Lock()
-				sodaQueue.Queue = sodaQueue.Queue[1:]
-				sodaPriorityQueue.mux.Unlock()
-			}
-		}
-	}()
-	for order := range soda {
-		if order.sodaPriorityQueue {
-			if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
-				sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, order)
-			} else {
-				fmt.Println("Pedido de refrigerante com prioridade descartado")
-			}
-		} else {
-			if len(sodaQueue.Queue) <= MaxQueueSoda {
-				sodaQueue.Queue = append(sodaQueue.Queue, order)
-			} else {
-				fmt.Println("Pedido de refrigerante descartado")
-			}
-		}
+	//Tem alguem na fila de prioridade
+	if len(sodaPriorityQueue.Queue) > 0 && (sodaPriorityQueue.Queue[0] != Order{}) {
+		makeSoda(sodaPriorityQueue.Queue[0])
+		sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
+	} else if len(sodaQueue.Queue) > 0 && (sodaQueue.Queue[0] != Order{}) { // tem alguem na fila comum
+		makeSoda(sodaQueue.Queue[0])
+		sodaQueue.Queue = sodaQueue.Queue[1:]
 	}
 }
 
-func processRequest(order *Order) {
-	if order == nil {
-		return
-	}
+func processRequest(order Order) {
 	time.Sleep(generateRandomTime(0, 30, time.Hour))
 	if order.Type == "hamburguer" {
-		hamburguers <- *order
+		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
+			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
+		} else {
+			fmt.Println("Pedido de hamburguer descartado")
+		}
 	} else {
-		soda <- *order
+		if len(sodaQueue.Queue) <= MaxQueueSoda {
+			sodaQueue.Queue = append(sodaQueue.Queue, order)
+		} else {
+			fmt.Println("Pedido de refrigerante descartado")
+		}
 	}
 }
 
