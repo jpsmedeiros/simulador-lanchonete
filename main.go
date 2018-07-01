@@ -20,11 +20,10 @@ type Event struct {
 
 type SafeQueue struct {
 	Queue []Order
-	mux   sync.Mutex
+	mux   sync.RWMutex
 }
 
 var (
-	orders, hamburguers, soda                                  chan Order
 	wait                                                       *sync.WaitGroup
 	events                                                     []Event
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
@@ -54,132 +53,133 @@ func init() {
 
 func main() {
 	wait = new(sync.WaitGroup)
-	wait.Add(1)
-	//cria um canal de pedidos
-	//Cria os canais de serviço
-	orders, hamburguers, soda = make(chan Order, 3), make(chan Order, 5), make(chan Order, 5)
+	wait.Add(len(events))
 	clientQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueRequest)}
 	hamburguerQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueBurguer)}
 	sodaPriorityQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSodaP)}
 	sodaQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSoda)}
-	//Gera pedidos
-	//TODO: Precisa consumir de uma lista
-	go generateClients()
 	//Consome pedidos de hamburguer
 	go hamburguerHandler()
 	//Consome os pedidos de refrigerante
 	go sodaHandler()
 	//Organiza pedidos da fila de clientes
 	go handleClientRequests()
+	//Gera pedidos
+	generateClients()
 	wait.Wait()
-
 }
 
 func generateClients() {
 	for _, event := range events {
-		newEvent := event
-		orders <- newEvent.Order
+		//Boqueia fila de clientes para inserção
+		clientQueue.mux.Lock()
+		if len(clientQueue.Queue) <= MaxQueueRequest {
+			clientQueue.Queue = append(clientQueue.Queue, event.Order)
+		}
+		//Desbloqueia fila de clientes
+		clientQueue.mux.Unlock()
 		time.Sleep(event.Duration)
+		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	}
-	for len(hamburguerQueue.Queue) != 0 && len(sodaPriorityQueue.Queue) != 0 && len(sodaQueue.Queue) != 0 && len(clientQueue.Queue) != 0 {
-	}
-	wait.Done()
+	fmt.Println(wait)
 }
 
 func handleClientRequests() {
-	go func() {
-		for {
-			if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
-				processRequest(&clientQueue.Queue[0])
-				clientQueue.mux.Lock()
-				clientQueue.Queue = clientQueue.Queue[1:]
-				clientQueue.mux.Unlock()
-			}
-		}
-	}()
-	//Lida com os pedidos para separa-los
-	for item := range orders {
-		if len(clientQueue.Queue) < MaxQueueRequest {
-			clientQueue.mux.Lock()
-			clientQueue.Queue = append(clientQueue.Queue, item)
-			clientQueue.mux.Unlock()
-		} else {
-			fmt.Println("Fila de pedidos cheia. Pedido descartado")
+	for {
+		//Caso haja alguém na fila de clientes
+		if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
+			//Efetua o tempo de atendimento
+			time.Sleep(generateRandomTime(0, 30, time.Hour))
+			//Bloqueia a fila de cliente para leitura
+			clientQueue.mux.RLock()
+			processRequest(clientQueue.Queue[0])
+			//Consome fila de clientes
+			clientQueue.Queue = clientQueue.Queue[1:]
+			//Desbloqueia a fila
+			clientQueue.mux.RUnlock()
 		}
 	}
 }
 
 func hamburguerHandler() {
-	go func() {
-		for {
-			//Tem alguem na fila de prioridade
-			if len(hamburguerQueue.Queue) > 0 && (hamburguerQueue.Queue[0] != Order{}) { // tem alguem na fila comum
-				makeBurguer(hamburguerQueue.Queue[0])
-				if hamburguerQueue.Queue[0].Next != nil {
-					hamburguerQueue.Queue[0].sodaPriorityQueue = true
-					soda <- *hamburguerQueue.Queue[0].Next
-				}
-				hamburguerQueue.mux.Lock()
-				hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
-				hamburguerQueue.mux.Unlock()
-			}
-		}
-	}()
-
-	for order := range hamburguers {
-		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
+	for {
+		//Caso haja alguem na fila de hamburguer
+		if len(hamburguerQueue.Queue) > 0 { // tem alguem na fila comum
+			//Faz o hamburguer
+			makeBurguer(hamburguerQueue.Queue[0])
+			//Bloqueia a fila de hamburguer para modificar a fila ou enviar para a fila de refrigerante com prioridade
 			hamburguerQueue.mux.Lock()
-			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
+			//Caso haja proximo pedido de refrigerante
+			if hamburguerQueue.Queue[0].Next != nil {
+				//Caso haja espaço na fila de prioridades de refrigerante
+				if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
+					//Bloqueia a fila para inserção
+					sodaPriorityQueue.mux.Lock()
+					sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, *hamburguerQueue.Queue[0].Next)
+					sodaPriorityQueue.mux.Unlock()
+				} else {
+					fmt.Println("Fila de prioridade de refrigerante cheia")
+					//Encerra o pedido por descarte
+					wait.Done()
+				}
+			} else { //Se não tiver proximo pedido
+				//Encerra o pedido
+				wait.Done()
+			}
+			//Anda com a fila de hamburgueres
+			hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
 			hamburguerQueue.mux.Unlock()
-		} else {
-			fmt.Println("Pedido de hamburguer descartado")
 		}
 	}
 }
 
 func sodaHandler() {
-	go func() {
-		for {
-			//Tem alguem na fila de prioridade
-			if len(sodaPriorityQueue.Queue) > 0 && (sodaPriorityQueue.Queue[0] != Order{}) {
-				makeSoda(sodaPriorityQueue.Queue[0])
-				sodaPriorityQueue.mux.Lock()
-				sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
-				sodaPriorityQueue.mux.Unlock()
-			} else if len(sodaQueue.Queue) > 0 && (sodaQueue.Queue[0] != Order{}) { // tem alguem na fila comum
-				makeSoda(sodaQueue.Queue[0])
-				sodaPriorityQueue.mux.Lock()
-				sodaQueue.Queue = sodaQueue.Queue[1:]
-				sodaPriorityQueue.mux.Unlock()
-			}
-		}
-	}()
-	for order := range soda {
-		if order.sodaPriorityQueue {
-			if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
-				sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, order)
-			} else {
-				fmt.Println("Pedido de refrigerante com prioridade descartado")
-			}
-		} else {
-			if len(sodaQueue.Queue) <= MaxQueueSoda {
-				sodaQueue.Queue = append(sodaQueue.Queue, order)
-			} else {
-				fmt.Println("Pedido de refrigerante descartado")
-			}
+	for {
+		//Caso haja alguem na fila de prioridade
+		if len(sodaPriorityQueue.Queue) > 0 {
+			//faz o refrigerante
+			makeSoda(sodaPriorityQueue.Queue[0])
+			//bloqueia a fila para modificação
+			sodaPriorityQueue.mux.Lock()
+			sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
+			sodaPriorityQueue.mux.Unlock()
+			//Encerra o pedido
+			wait.Done()
+		} else if len(sodaQueue.Queue) > 0 {
+			//faz o refrigerante
+			makeSoda(sodaQueue.Queue[0])
+			//bloqueia fila para modificação
+			sodaQueue.mux.Lock()
+			sodaQueue.Queue = sodaQueue.Queue[1:]
+			sodaQueue.mux.Unlock()
+			//Encerra pedido
+			wait.Done()
 		}
 	}
 }
 
-func processRequest(order *Order) {
-	if order == nil {
-		return
-	}
-	time.Sleep(generateRandomTime(0, 30, time.Hour))
+func processRequest(order Order) {
 	if order.Type == "hamburguer" {
-		hamburguers <- *order
+		//Se houver lugar na fila de hamburguer
+		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
+			//bloqueia a fila para inserção
+			hamburguerQueue.mux.Lock()
+			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
+			hamburguerQueue.mux.Unlock()
+		} else {
+			//Se não houver, encerra o pedido
+			fmt.Println("Pedido de hamburguer descartado")
+			wait.Done()
+		}
+	} else if len(sodaQueue.Queue) <= MaxQueueSoda { // Se houver lugar na fila de refrigerante
+		//Bloqueia a fila apra inserção
+		sodaQueue.mux.Lock()
+		sodaQueue.Queue = append(sodaQueue.Queue, order)
+		sodaQueue.mux.Unlock()
 	} else {
-		soda <- *order
+		//Se não houver, encerra o pedido
+		fmt.Println("Pedido de Refrigerante descartado")
+		wait.Done()
 	}
 }
 
