@@ -79,8 +79,10 @@ func generateClients() {
 	for _, event := range events {
 		//Boqueia fila de clientes para inserção
 		clientQueue.mux.Lock()
-		if len(clientQueue.Queue) <= MaxQueueRequest {
+		if len(clientQueue.Queue) < MaxQueueRequest {
 			clientQueue.Queue = append(clientQueue.Queue, event.Order)
+		} else {
+			wait.Done()
 		}
 		//Desbloqueia fila de clientes
 		clientQueue.mux.Unlock()
@@ -120,7 +122,7 @@ func hamburguerHandler() {
 			//Caso haja proximo pedido de refrigerante
 			if hamburguerQueue.Queue[0].Next != nil {
 				//Caso haja espaço na fila de prioridades de refrigerante
-				if len(sodaPriorityQueue.Queue) <= MaxQueueSodaP {
+				if len(sodaPriorityQueue.Queue) < MaxQueueSodaP {
 					//Bloqueia a fila para inserção
 					sodaPriorityQueue.mux.Lock()
 					sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, *hamburguerQueue.Queue[0].Next)
@@ -170,7 +172,7 @@ func sodaHandler() {
 func processRequest(order Order) {
 	if order.Type == "hamburguer" {
 		//Se houver lugar na fila de hamburguer
-		if len(hamburguerQueue.Queue) <= MaxQueueBurguer {
+		if len(hamburguerQueue.Queue) < MaxQueueBurguer {
 			//bloqueia a fila para inserção
 			hamburguerQueue.mux.Lock()
 			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
@@ -180,7 +182,7 @@ func processRequest(order Order) {
 			fmt.Println("Pedido de hamburguer descartado")
 			wait.Done()
 		}
-	} else if len(sodaQueue.Queue) <= MaxQueueSoda { // Se houver lugar na fila de refrigerante
+	} else if len(sodaQueue.Queue) < MaxQueueSoda { // Se houver lugar na fila de refrigerante
 		//Bloqueia a fila apra inserção
 		sodaQueue.mux.Lock()
 		sodaQueue.Queue = append(sodaQueue.Queue, order)
