@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,184 +25,104 @@ type SafeQueue struct {
 }
 
 var (
-	wait                                                       *sync.WaitGroup
 	events                                                     []Event
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
+	eventsCount, descarteCliente, totalEvents, totalFila       int64
+	utilization                                                time.Duration
+	mux                                                        *sync.Mutex
 )
 
 // Define experiment
 const (
-	QueueSize       = 15
-	MaxQueueBurguer = QueueSize
-	MaxQueueSoda    = QueueSize
-	MaxQueueSodaP   = QueueSize
-	MaxQueueRequest = QueueSize
-	ArrivalTimeUnit = time.Millisecond
-	ArrivalTime     = 110 //E[C]
-	ArrivalQuantity = 1
+	QueueSize         = 15
+	MaxQueueBurguer   = QueueSize
+	MaxQueueSoda      = QueueSize
+	MaxQueueSodaP     = QueueSize
+	MaxQueueRequest   = QueueSize
+	ArrivalTimeUnit   = time.Millisecond
+	ArrivalTime       = 110 //E[C]
+	ArrivalQuantity   = 1
+	ServiceTimeUnit   = time.Millisecond
+	ServiceTime       = 90 //E[C]
+	ServiceQuantity   = 1
+	TimeFasterMult    = 60
+	MaxSimulationTime = time.Hour / TimeFasterMult
 )
 
 func init() {
-	var orderNumber uint32
-	var duration time.Duration
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 17)
-	simulationTime := time.Hour / 3600
+	mux = &sync.Mutex{}
+	//Inicializa eventos
+	randDuration := randomNumberGenerator(1103515245, 12345, 1<<31, 3)
+	randOrder := randomNumberGenerator(1103515245, 12345, 1<<31, 4)
+	simulationTime := MaxSimulationTime
 	events = make([]Event, 0)
+	var duration time.Duration
+	var orderNumber uint32
 	for simulationTime > 0 {
-		orderNumber = generateOrderNumber(rand())
-		duration = generateRandomTime(rand(), ArrivalQuantity, ArrivalTime*ArrivalTimeUnit)
-		events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
-		simulationTime = simulationTime - duration
+		orderNumber = generateOrderNumber(randOrder())
+		duration = generateRandomTime(randDuration(), ArrivalQuantity, ArrivalTime*ArrivalTimeUnit)
+		if duration < simulationTime {
+			events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
+			simulationTime = simulationTime - duration
+		} else {
+			events = append(events, Event{Order: generateOrder(orderNumber), Duration: simulationTime})
+			simulationTime = 0
+		}
 	}
-	fmt.Println(simulationTime)
+	//Inicializa variavel de controle
+	eventsCount = int64(len(events))
+	//Inicializa variaveis de analise
+	totalEvents = eventsCount
+	//Inicializa fila
+	clientQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueRequest)}
 }
 
 func main() {
-	wait = new(sync.WaitGroup)
-	wait.Add(len(events))
-	clientQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueRequest)}
-	hamburguerQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueBurguer)}
-	sodaPriorityQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSodaP)}
-	sodaQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueSoda)}
-
-	//Consome pedidos de hamburguer
-	go hamburguerHandler()
-	//Consome os pedidos de refrigerante
-	go sodaHandler()
-	//Organiza pedidos da fila de clientes
-	go handleClientRequests()
 	//Gera pedidos
-	generateClients()
-	wait.Wait()
+	go generateEvents()
+	handleEvents()
+	for eventsCount > 0 {
+	}
+	fmt.Printf("(Descarte: %.2f%%, Utilização: %.0f%%, Media fila: %.0f)\n", float64(descarteCliente)/float64(totalEvents), (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents))
 }
 
-func generateClients() {
+func generateEvents() {
 	for _, event := range events {
 		//Boqueia fila de clientes para inserção
-		clientQueue.mux.Lock()
 		if len(clientQueue.Queue) < MaxQueueRequest {
+			mux.Lock()
 			clientQueue.Queue = append(clientQueue.Queue, event.Order)
+			mux.Unlock()
 		} else {
-			wait.Done()
+			mux.Lock()
+			atomic.AddInt64(&eventsCount, -1)
+			atomic.AddInt64(&descarteCliente, 1)
+			mux.Unlock()
 		}
-		//Desbloqueia fila de clientes
-		clientQueue.mux.Unlock()
+		totalFila += int64(len(clientQueue.Queue))
+		//Desbloqueia fila de cliente
 		time.Sleep(event.Duration)
-		fmt.Printf("(%d, %d, %d, %d)\n", len(clientQueue.Queue), len(hamburguerQueue.Queue), len(sodaPriorityQueue.Queue), len(sodaQueue.Queue))
 	}
-	fmt.Println(wait)
+	eventsCount = atomic.LoadInt64(&eventsCount)
+	descarteCliente = atomic.LoadInt64(&descarteCliente)
 }
 
-func handleClientRequests() {
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 0)
-	for {
-		//Caso haja alguém na fila de clientes
-		if len(clientQueue.Queue) > 0 && (clientQueue.Queue[0] != Order{}) {
-			//Efetua o tempo de atendimento
-			time.Sleep(generateRandomTime(rand(), 30, time.Hour))
-			//Bloqueia a fila de cliente para leitura
-			clientQueue.mux.RLock()
-			processRequest(clientQueue.Queue[0])
-			//Consome fila de clientes
-			clientQueue.Queue = clientQueue.Queue[1:]
-			//Desbloqueia a fila
-			clientQueue.mux.RUnlock()
-		}
-	}
-}
-
-func hamburguerHandler() {
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
-	for {
-		//Caso haja alguem na fila de hamburguer
-		if len(hamburguerQueue.Queue) > 0 { // tem alguem na fila comum
-			//Faz o hamburguer
-			makeBurguer(hamburguerQueue.Queue[0], rand())
-			//Bloqueia a fila de hamburguer para modificar a fila ou enviar para a fila de refrigerante com prioridade
-			hamburguerQueue.mux.Lock()
-			//Caso haja proximo pedido de refrigerante
-			if hamburguerQueue.Queue[0].Next != nil {
-				//Caso haja espaço na fila de prioridades de refrigerante
-				if len(sodaPriorityQueue.Queue) < MaxQueueSodaP {
-					//Bloqueia a fila para inserção
-					sodaPriorityQueue.mux.Lock()
-					sodaPriorityQueue.Queue = append(sodaPriorityQueue.Queue, *hamburguerQueue.Queue[0].Next)
-					sodaPriorityQueue.mux.Unlock()
-				} else {
-					fmt.Println("Fila de prioridade de refrigerante cheia")
-					//Encerra o pedido por descarte
-					wait.Done()
-				}
-			} else { //Se não tiver proximo pedido
-				//Encerra o pedido
-				wait.Done()
+func handleEvents() {
+	go func() {
+		randTime := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
+		for eventsCount > 0 {
+			if len(clientQueue.Queue) > 0 {
+				t := generateRandomTime(randTime(), 1, ServiceTime*ServiceTimeUnit)
+				time.Sleep(t)
+				clientQueue.mux.Lock()
+				utilization = utilization + t
+				clientQueue.Queue = clientQueue.Queue[1:]
+				atomic.AddInt64(&eventsCount, -1)
+				clientQueue.mux.Unlock()
+				fmt.Println("BURGAO: ", eventsCount)
 			}
-			//Anda com a fila de hamburgueres
-			hamburguerQueue.Queue = hamburguerQueue.Queue[1:]
-			hamburguerQueue.mux.Unlock()
 		}
-	}
-}
-
-func sodaHandler() {
-	rand := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
-	for {
-		//Caso haja alguem na fila de prioridade
-		if len(sodaPriorityQueue.Queue) > 0 {
-			//faz o refrigerante
-			makeSoda(sodaPriorityQueue.Queue[0], rand())
-			//bloqueia a fila para modificação
-			sodaPriorityQueue.mux.Lock()
-			sodaPriorityQueue.Queue = sodaPriorityQueue.Queue[1:]
-			sodaPriorityQueue.mux.Unlock()
-			//Encerra o pedido
-			wait.Done()
-		} else if len(sodaQueue.Queue) > 0 {
-			//faz o refrigerante
-			makeSoda(sodaQueue.Queue[0], rand())
-			//bloqueia fila para modificação
-			sodaQueue.mux.Lock()
-			sodaQueue.Queue = sodaQueue.Queue[1:]
-			sodaQueue.mux.Unlock()
-			//Encerra pedido
-			wait.Done()
-		}
-	}
-}
-
-func processRequest(order Order) {
-	if order.Type == "hamburguer" {
-		//Se houver lugar na fila de hamburguer
-		if len(hamburguerQueue.Queue) < MaxQueueBurguer {
-			//bloqueia a fila para inserção
-			hamburguerQueue.mux.Lock()
-			hamburguerQueue.Queue = append(hamburguerQueue.Queue, order)
-			hamburguerQueue.mux.Unlock()
-		} else {
-			//Se não houver, encerra o pedido
-			fmt.Println("Pedido de hamburguer descartado")
-			wait.Done()
-		}
-	} else if len(sodaQueue.Queue) < MaxQueueSoda { // Se houver lugar na fila de refrigerante
-		//Bloqueia a fila apra inserção
-		sodaQueue.mux.Lock()
-		sodaQueue.Queue = append(sodaQueue.Queue, order)
-		sodaQueue.mux.Unlock()
-	} else {
-		//Se não houver, encerra o pedido
-		fmt.Println("Pedido de Refrigerante descartado")
-		wait.Done()
-	}
-}
-
-func makeBurguer(order Order, rand float64) {
-	time.Sleep(generateRandomTime(rand, 20, time.Hour))
-	//fmt.Println(order.Type)
-}
-
-func makeSoda(order Order, rand float64) {
-	time.Sleep(generateRandomTime(rand, 60, time.Hour))
-	//fmt.Println(order.Type)
+	}()
 }
 
 func randomNumberGenerator(a, c, m, seed uint32) func() float64 {
@@ -218,8 +139,8 @@ func generateRandomExp(lambda float64, u float64) float64 {
 	return (-1 / lambda) * math.Log(1-u)
 }
 
-func generateRandomTime(u, delta float64, duration time.Duration) time.Duration {
-	return time.Duration(generateRandomExp(delta, u)*float64(duration)) / 3600
+func generateRandomTime(u, lambda float64, duration time.Duration) time.Duration {
+	return time.Duration(generateRandomExp(lambda, u)*float64(duration)) / TimeFasterMult
 }
 
 func generateOrderNumber(number float64) uint32 {
