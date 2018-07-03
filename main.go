@@ -3,15 +3,16 @@ package main
 import (
 	"fmt"
 	"math"
+	"os"
+	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type Order struct {
-	Type              string
-	Next              *Order
-	sodaPriorityQueue bool
+	Type     string
+	Next     *Order
+	Duration time.Time
 }
 
 type Event struct {
@@ -21,36 +22,57 @@ type Event struct {
 
 type SafeQueue struct {
 	Queue []Order
-	mux   sync.RWMutex
+	mux   *sync.RWMutex
 }
 
 var (
 	events                                                     []Event
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
 	eventsCount, descarteCliente, totalEvents, totalFila       int64
-	utilization                                                time.Duration
-	mux                                                        *sync.Mutex
+
+	maxQueueRequest, queueSize uint
+
+	wg *sync.WaitGroup
+
+	serviceTime, arrivalTime uint
+	utilization, meanTime    time.Duration
 )
 
 // Define experiment
 const (
-	QueueSize         = 15
-	MaxQueueBurguer   = QueueSize
-	MaxQueueSoda      = QueueSize
-	MaxQueueSodaP     = QueueSize
-	MaxQueueRequest   = QueueSize
-	ArrivalTimeUnit   = time.Millisecond
-	ArrivalTime       = 110 //E[C]
-	ArrivalQuantity   = 1
-	ServiceTimeUnit   = time.Millisecond
-	ServiceTime       = 90 //E[C]
-	ServiceQuantity   = 1
+	ArrivalTimeUnit = 1000000
+	ArrivalQuantity = 1
+
+	ServiceTimeUnit = 1000000
+	ServiceQuantity = 1
+
 	TimeFasterMult    = 60
 	MaxSimulationTime = time.Hour / TimeFasterMult
 )
 
 func init() {
-	mux = &sync.Mutex{}
+	var err error
+	temp, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		return
+		fmt.Println("erro ao executar")
+	}
+	maxQueueRequest = uint(temp)
+
+	temp, err = strconv.Atoi(os.Args[2])
+	if err != nil {
+		return
+		fmt.Println("erro ao executar")
+	}
+	serviceTime = uint(temp)
+
+	temp, err = strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Println("erro ao executar")
+		return
+	}
+	arrivalTime = uint(temp)
+
 	//Inicializa eventos
 	randDuration := randomNumberGenerator(1103515245, 12345, 1<<31, 3)
 	randOrder := randomNumberGenerator(1103515245, 12345, 1<<31, 4)
@@ -60,7 +82,7 @@ func init() {
 	var orderNumber uint32
 	for simulationTime > 0 {
 		orderNumber = generateOrderNumber(randOrder())
-		duration = generateRandomTime(randDuration(), ArrivalQuantity, ArrivalTime*ArrivalTimeUnit)
+		duration = generateRandomTime(randDuration(), ArrivalQuantity, time.Duration(arrivalTime)*ArrivalTimeUnit)
 		if duration < simulationTime {
 			events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
 			simulationTime = simulationTime - duration
@@ -68,43 +90,45 @@ func init() {
 			events = append(events, Event{Order: generateOrder(orderNumber), Duration: simulationTime})
 			simulationTime = 0
 		}
+		fmt.Println(simulationTime)
 	}
 	//Inicializa variavel de controle
 	eventsCount = int64(len(events))
 	//Inicializa variaveis de analise
 	totalEvents = eventsCount
 	//Inicializa fila
-	clientQueue = &SafeQueue{Queue: make([]Order, 0, MaxQueueRequest)}
+	clientQueue = &SafeQueue{Queue: make([]Order, 0), mux: &sync.RWMutex{}}
+
+	wg = &sync.WaitGroup{}
 }
 
 func main() {
-	//Gera pedidos
+	// InitExp()
+	wg.Add(1)
+	//Gera pedidosi
 	go generateEvents()
 	handleEvents()
-	for eventsCount > 0 {
-	}
-	fmt.Printf("(Descarte: %.2f%%, Utilização: %.0f%%, Media fila: %.0f)\n", float64(descarteCliente)/float64(totalEvents), (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents))
+	wg.Wait()
+	fmt.Printf("(Descarte: %.2f%%, Utilização: %.0f%%, Media fila: %.0f, Media de tempo no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents), (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), meanTime.Seconds()/float64(totalEvents-descarteCliente))
 }
 
 func generateEvents() {
 	for _, event := range events {
 		//Boqueia fila de clientes para inserção
-		if len(clientQueue.Queue) < MaxQueueRequest {
-			mux.Lock()
+		if uint(len(clientQueue.Queue)) < maxQueueRequest {
+			clientQueue.mux.Lock()
 			clientQueue.Queue = append(clientQueue.Queue, event.Order)
-			mux.Unlock()
+			clientQueue.mux.Unlock()
 		} else {
-			mux.Lock()
-			atomic.AddInt64(&eventsCount, -1)
-			atomic.AddInt64(&descarteCliente, 1)
-			mux.Unlock()
+			clientQueue.mux.Lock()
+			eventsCount--
+			descarteCliente++
+			clientQueue.mux.Unlock()
 		}
 		totalFila += int64(len(clientQueue.Queue))
 		//Desbloqueia fila de cliente
 		time.Sleep(event.Duration)
 	}
-	eventsCount = atomic.LoadInt64(&eventsCount)
-	descarteCliente = atomic.LoadInt64(&descarteCliente)
 }
 
 func handleEvents() {
@@ -112,16 +136,24 @@ func handleEvents() {
 		randTime := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
 		for eventsCount > 0 {
 			if len(clientQueue.Queue) > 0 {
-				t := generateRandomTime(randTime(), 1, ServiceTime*ServiceTimeUnit)
-				time.Sleep(t)
-				clientQueue.mux.Lock()
+				t := generateRandomTime(randTime(), ServiceQuantity, time.Duration(serviceTime)*ServiceTimeUnit)
 				utilization = utilization + t
+
+				clientQueue.mux.RLock()
+				meanTime += time.Now().Sub(clientQueue.Queue[0].Duration) + t
+				clientQueue.mux.RUnlock()
+
+				time.Sleep(t)
+
+				clientQueue.mux.Lock()
 				clientQueue.Queue = clientQueue.Queue[1:]
-				atomic.AddInt64(&eventsCount, -1)
 				clientQueue.mux.Unlock()
+
+				eventsCount--
 				fmt.Println("BURGAO: ", eventsCount)
 			}
 		}
+		wg.Done()
 	}()
 }
 
@@ -159,11 +191,12 @@ func isInRange(x, y, value uint32) bool {
 }
 
 func generateOrder(orderNumber uint32) Order {
-	if orderNumber == 1 {
-		return Order{Type: "hamburguer"}
-	} else if orderNumber == 2 {
-		return Order{Type: "soda"}
-	} else {
-		return Order{Type: "hamburguer", Next: &Order{Type: "soda"}}
-	}
+	// if orderNumber == 1 {
+	// 	return Order{Type: "hamburguer"}
+	// } else if orderNumber == 2 {
+	// 	return Order{Type: "soda"}
+	// } else {
+	// 	return Order{Type: "hamburguer", Next: &Order{Type: "soda"}}
+	// }
+	return Order{Duration: time.Now()}
 }
