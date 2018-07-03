@@ -105,7 +105,7 @@ func main() {
 	go generateEvents()
 	handleEvents()
 	wg.Wait()
-	fmt.Printf("(Descarte: %.2f%%, Utilização: %.0f%%, Media fila: %.0f, Media de tempo no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents), (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), meanTime.Seconds()/float64(totalEvents-descarteCliente))
+	fmt.Printf("(Descarte: %.5f%%, Utilização: %.5f%%, Media fila: %.5f, Media de tempo no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents)*100, (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), meanTime.Seconds()/float64(totalEvents-descarteCliente))
 }
 
 func generateEvents() {
