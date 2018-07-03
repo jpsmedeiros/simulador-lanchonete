@@ -47,6 +47,8 @@ const (
 
 	TimeFasterMult    = 60
 	MaxSimulationTime = time.Hour / TimeFasterMult
+
+	Seed = 0
 )
 
 func init() {
@@ -73,7 +75,7 @@ func init() {
 	arrivalTime = uint(temp)
 
 	//Inicializa eventos
-	randDuration := randomNumberGenerator(1103515245, 12345, 1<<31, 3)
+	randDuration := randomNumberGenerator(1103515245, 12345, 1<<31, Seed)
 	simulationTime := MaxSimulationTime
 	events = make([]Event, 0)
 	var duration time.Duration
@@ -133,7 +135,7 @@ func generateEvents() {
 
 func handleEvents() {
 	go func() {
-		randTime := randomNumberGenerator(1103515245, 12345, 1<<31, 5)
+		randTime := randomNumberGenerator(1103515245, 12345, 1<<31, Seed+1)
 		for eventsCount > 0 {
 			if len(clientQueue.Queue) > 0 {
 				t := generateRandomTime(randTime(), ServiceQuantity, time.Duration(serviceTime)*ServiceTimeUnit)
