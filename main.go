@@ -10,7 +10,6 @@ import (
 )
 
 type Order struct {
-	Next     *Order
 	Duration time.Time
 }
 
@@ -28,6 +27,7 @@ var (
 	events                                                     []Event
 	clientQueue, hamburguerQueue, sodaPriorityQueue, sodaQueue *SafeQueue
 	eventsCount, descarteCliente, totalEvents, totalFila       int64
+	finished                                                   []time.Duration
 
 	maxQueueRequest, queueSize uint
 
@@ -95,6 +95,7 @@ func init() {
 	//Inicializa fila
 	clientQueue = &SafeQueue{Queue: make([]Order, 0), mux: &sync.RWMutex{}}
 
+	finished = make([]time.Duration, 0, totalEvents)
 	wg = &sync.WaitGroup{}
 }
 
@@ -105,7 +106,10 @@ func main() {
 	go generateEvents()
 	handleEvents()
 	wg.Wait()
-	fmt.Printf("(Descarte: %.5f%%, Utilização: %.5f%%, Media fila: %.5f, Media de tempo no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents)*100, (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), meanTime.Seconds()/float64(totalEvents-descarteCliente))
+	for _, time := range finished {
+		meanTime += time
+	}
+	fmt.Printf("(Descarte: %.5f%%, Utilização: %.5f%%, Media fila: %.5f, Media no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents)*100, (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), (meanTime.Seconds()/1000)/float64(len(finished)))
 }
 
 func generateEvents() {
@@ -136,7 +140,7 @@ func handleEvents() {
 				utilization = utilization + t
 
 				clientQueue.mux.RLock()
-				meanTime += time.Now().Sub(clientQueue.Queue[0].Duration) + t
+				finished = append(finished, time.Now().Sub(clientQueue.Queue[0].Duration))
 				clientQueue.mux.RUnlock()
 
 				time.Sleep(t)
@@ -187,12 +191,5 @@ func isInRange(x, y, value uint32) bool {
 }
 
 func generateOrder(orderNumber uint32) Order {
-	// if orderNumber == 1 {
-	// 	return Order{Type: "hamburguer"}
-	// } else if orderNumber == 2 {
-	// 	return Order{Type: "soda"}
-	// } else {
-	// 	return Order{Type: "hamburguer", Next: &Order{Type: "soda"}}
-	// }
 	return Order{Duration: time.Now()}
 }
