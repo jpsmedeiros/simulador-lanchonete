@@ -10,7 +10,6 @@ import (
 )
 
 type Order struct {
-	Type     string
 	Next     *Order
 	Duration time.Time
 }
@@ -75,19 +74,16 @@ func init() {
 
 	//Inicializa eventos
 	randDuration := randomNumberGenerator(1103515245, 12345, 1<<31, 3)
-	randOrder := randomNumberGenerator(1103515245, 12345, 1<<31, 4)
 	simulationTime := MaxSimulationTime
 	events = make([]Event, 0)
 	var duration time.Duration
-	var orderNumber uint32
 	for simulationTime > 0 {
-		orderNumber = generateOrderNumber(randOrder())
 		duration = generateRandomTime(randDuration(), ArrivalQuantity, time.Duration(arrivalTime)*ArrivalTimeUnit)
 		if duration < simulationTime {
-			events = append(events, Event{Order: generateOrder(orderNumber), Duration: duration})
+			events = append(events, Event{Duration: duration})
 			simulationTime = simulationTime - duration
 		} else {
-			events = append(events, Event{Order: generateOrder(orderNumber), Duration: simulationTime})
+			events = append(events, Event{Duration: simulationTime})
 			simulationTime = 0
 		}
 		fmt.Println(simulationTime)
