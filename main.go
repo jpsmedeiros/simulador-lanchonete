@@ -53,15 +53,15 @@ func init() {
 	var err error
 	temp, err := strconv.Atoi(os.Args[1])
 	if err != nil {
-		return
 		fmt.Println("erro ao executar")
+		return
 	}
 	maxQueueRequest = uint(temp)
 
 	temp, err = strconv.Atoi(os.Args[2])
 	if err != nil {
-		return
 		fmt.Println("erro ao executar")
+		return
 	}
 	serviceTime = uint(temp)
 
