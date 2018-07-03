@@ -48,7 +48,7 @@ const (
 	TimeFasterMult    = 60
 	MaxSimulationTime = time.Hour / TimeFasterMult
 
-	Seed = 0
+	Seed = 34
 )
 
 func init() {
@@ -111,7 +111,7 @@ func main() {
 	for _, time := range finished {
 		meanTime += time
 	}
-	fmt.Printf("(Descarte: %.5f%%, Utilização: %.5f%%, Media fila: %.5f, Media no sistema: %.2f)\n", float64(descarteCliente)/float64(totalEvents)*100, (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), (meanTime.Seconds()/1000)/float64(len(finished)))
+	fmt.Printf("(Descarte: %.5f%%, Utilização: %.5f%%, Media fila: %.5f, Media no sistema: %.10f)\n", float64(descarteCliente)/float64(totalEvents)*100, (float64(utilization)/float64(MaxSimulationTime))*100, float64(totalFila)/float64(totalEvents), (meanTime.Seconds()*1000)/float64(len(finished)))
 }
 
 func generateEvents() {
@@ -119,7 +119,7 @@ func generateEvents() {
 		//Boqueia fila de clientes para inserção
 		if uint(len(clientQueue.Queue)) < maxQueueRequest {
 			clientQueue.mux.Lock()
-			clientQueue.Queue = append(clientQueue.Queue, event.Order)
+			clientQueue.Queue = append(clientQueue.Queue, Order{Duration: time.Now()})
 			clientQueue.mux.Unlock()
 		} else {
 			clientQueue.mux.Lock()
@@ -142,7 +142,7 @@ func handleEvents() {
 				utilization = utilization + t
 
 				clientQueue.mux.RLock()
-				finished = append(finished, time.Now().Sub(clientQueue.Queue[0].Duration))
+				finished = append(finished, time.Now().Sub(clientQueue.Queue[0].Duration)+t)
 				clientQueue.mux.RUnlock()
 
 				time.Sleep(t)
@@ -175,23 +175,4 @@ func generateRandomExp(lambda float64, u float64) float64 {
 
 func generateRandomTime(u, lambda float64, duration time.Duration) time.Duration {
 	return time.Duration(generateRandomExp(lambda, u)*float64(duration)) / TimeFasterMult
-}
-
-func generateOrderNumber(number float64) uint32 {
-	orderNumber := uint32(number * 10)
-	if isInRange(0, 3, orderNumber) {
-		return 1 // hamburguer
-	} else if isInRange(4, 5, orderNumber) {
-		return 2 // soda
-	} else {
-		return 3 // hamburguer + soda
-	}
-}
-
-func isInRange(x, y, value uint32) bool {
-	return x <= value && value <= y
-}
-
-func generateOrder(orderNumber uint32) Order {
-	return Order{Duration: time.Now()}
 }
